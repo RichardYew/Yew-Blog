@@ -1,5 +1,5 @@
 ---
-title: "WSL 开发环境构建"
+title: "WSL 初始化"
 date: "2026-10-02T00:00:00+08:00"
 description: "初始化 WSL 开发环境"
 categories:
@@ -37,33 +37,39 @@ ps -p 1 -o comm=
 ```
 输出 `systemd` 即为成功。
 ---
-### 1.2 替换国内软件源（以清华 TUNA 镜像为例）
-Ubuntu 默认官方源在国内网络环境下访问速度较慢，替换为清华 TUNA 镜像源可大幅提升软件安装与更新效率，适配 WSL 开发场景直接使用。
+### 1.2 配置国内软件源（以清华 TUNA 镜像为例）
+Ubuntu 默认官方源在国内网络环境下访问速度较慢，切换为清华 TUNA 镜像源可大幅提升软件安装与更新效率。
+
+> ⚠️ **Ubuntu 24.04 重大变化**：24.04 起默认源**不再是** `/etc/apt/sources.list`，而是 deb822 格式的 `/etc/apt/sources.list.d/ubuntu.sources`（指向 `archive.ubuntu.com` / `security.ubuntu.com`）。新装系统下的 `sources.list` 通常只是一段"源已迁移"的注释，**备份它没有任何回滚价值**。
+> 如果只往 `sources.list` 写清华源而不动 `ubuntu.sources`，结果是**两套源并存**：`apt update` 仍会请求官方源（慢、易超时），且同一包会重复列出条目。
+
 ```bash
-# 1. 备份原始源配置文件（出错可快速回滚）
-sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
+# 1. 备份真正的主源文件（出错可快速回滚）
+sudo cp /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources.bak
 ```
 ```bash
-# 2. 覆盖写入清华TUNA镜像源配置
-sudo tee /etc/apt/sources.list << 'EOF'
-deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ noble main restricted universe multiverse
-deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ noble-security main restricted universe multiverse
-deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ noble-updates main restricted universe multiverse
-deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ noble-backports main restricted universe multiverse
-
-# deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ noble main restricted universe multiverse
-# deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ noble-security main restricted universe multiverse
-# deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ noble-updates main restricted universe multiverse
-# deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ noble-backports main restricted universe multiverse
-EOF
+# 2. 把 URIs 原地替换为清华 TUNA（suites 不用动，TUNA 提供 noble / noble-security / noble-updates / noble-backports）
+sudo sed -i \
+  -e 's|http://archive.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
+  -e 's|http://security.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' \
+  /etc/apt/sources.list.d/ubuntu.sources
 ```
 ```bash
 # 3. 更新软件索引并完成系统全量升级
 sudo apt update && sudo apt full-upgrade -y
 ```
 
+> 💡 **如果你曾按旧版教程写过 `/etc/apt/sources.list`**（文件里是 `deb https://mirrors.tuna.tsinghua.edu.cn/...` 这种行），请二选一，避免双源并存：
+> - 方案 A（推荐）：删掉旧追加，只保留 1.2 的 deb822 写法 —— `sudo mv /etc/apt/sources.list /etc/apt/sources.list.old`
+> - 方案 B：保留 `sources.list`，但删掉官方 `ubuntu.sources` —— `sudo rm /etc/apt/sources.list.d/ubuntu.sources`
+>
+> **验证是否只用清华源**（输出里应只有 `mirrors.tuna.tsinghua.edu.cn`，不应出现 `archive.ubuntu.com` / `security.ubuntu.com`）：
+> ```bash
+> apt-get indextargets --format '$(SITE)' | sort -u
+> ```
+
 > 💡 补充说明
-> - 本配置仅适配 **Ubuntu 24.04 LTS（版本代号 noble）**，其他版本需替换为对应代号（如 22.04 为 jammy）。
+> - 本配置仅适配 **Ubuntu 24.04 LTS（版本代号 noble）**，其他版本需替换为对应代号（如 22.04 为 jammy；22.04 及更早版本仍用 `sources.list`）。
 > - `deb` 开头的是二进制软件包源，日常开发装依赖、更新系统都走这部分；`deb-src` 是源码源，普通应用开发无需开启，保持注释即可。
 > - `apt full-upgrade` 会完整升级所有已安装包，同时智能处理依赖变动 —— 自动安装新增依赖、移除冲突包。相比保守的 `apt upgrade`，升级更彻底，适合换源后、大版本更新时使用；执行前可留意终端提示，确认无重要软件包被标记移除。
 > - WSL 环境无需额外调整架构或网络配置，上述命令可直接复制执行。
@@ -108,12 +114,19 @@ chsh -s $(which zsh)
 
 ### 2.2 安装 Oh My Zsh（国内镜像）
 ```bash
-# Gitee 镜像安装，避免 GitHub 网络问题
+# 从 Gitee 下载安装脚本
 sh -c "$(curl -fsSL https://gitee.com/mirrors/oh-my-zsh/raw/master/tools/install.sh)"
 ```
-> 💡 **交互提示**：
-> - 询问是否覆盖 `.zshrc`：输入大写 **`Y`**（小写 y 可能被识别为无效选择）
-> - 询问是否切换默认 shell：输入大写 **`Y`**
+> 💡 **交互提示**（两处提示都是 **`[Y/n]`** 格式，即"默认 Yes"）：
+> - 询问是否覆盖 `.zshrc`：直接回车或输入 `y`/`Y` 均可（脚本 `case` 同时接受 `[Yy]*` 和空回车）；只有输入 `n`/`N` 才会跳过
+> - 询问是否切换默认 shell：同上
+>
+> **关于"Gitee 镜像"的准确边界**：Gitee 只加速了**安装脚本本身的下载**，脚本内 `REMOTE` 默认仍是 `https://github.com/ohmyzsh/ohmyzsh.git`，**克隆仓库仍走 GitHub**。若 GitHub 克隆也超时，用 `REMOTE` 指向 Gitee 镜像仓库（已实测该镜像可 `git ls-remote`）：
+> ```bash
+> REMOTE=https://gitee.com/mirrors/ohmyzsh.git \
+>   sh -c "$(curl -fsSL https://gitee.com/mirrors/oh-my-zsh/raw/master/tools/install.sh)"
+> ```
+> 克隆完成后可用 `git -C ~/.oh-my-zsh remote -v` 确认 origin 指向哪里。
 >
 > 无人值守免交互版本（跳过所有确认）：
 > ```bash
@@ -140,6 +153,11 @@ cp ~/.oh-my-zsh/templates/zshrc.zsh-template ~/.zshrc
 # 追加完整配置
 cat >> ~/.zshrc << 'EOF'
 # ========== 开发环境配置 ==========
+
+# 用户级可执行文件（ensurepip 生成的 pip3.13、pip install --user 安装的 CLI）
+# 注意：Ubuntu 24.04 默认 PATH 里没有 ~/.local/bin，不加这一行 pip 装的命令会 command not found
+export PATH=$HOME/.local/bin:$PATH
+
 # Java 21
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
@@ -149,7 +167,7 @@ export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
 export GOPROXY=https://goproxy.cn,direct
 export GOMODCACHE=$HOME/go/pkg/mod
 
-# Python 别名（直接指向 3.13，不经过系统 python3）
+# Python 别名（仅对交互式 zsh 生效，脚本/非交互场景请显式用 python3.13）
 alias python="python3.13"
 alias python3="python3.13"
 alias pip="python3.13 -m pip"
@@ -167,8 +185,11 @@ export NVM_DIR="$HOME/.nvm"
 # Zsh 行为优化
 setopt nonomatch                # 通配符不匹配时不报错
 setopt interactive_comments     # 交互模式下 # 开头视为注释
+typeset -U path                 # PATH 去重：反复 source ~/.zshrc 不会重复追加
 EOF
 ```
+
+> 💡 **别名的作用域**：`python`/`pip` 是 zsh **交互式别名**，只在你手动敲命令的终端里生效；`zsh -c 'python --version'`、`bash -c 'python --version'`、cron/脚本里都会 `command not found`。脚本中请统一写 `python3.13`。另外 `.bashrc` 不会自动继承这些别名（本教程默认 shell 是 zsh）。
 
 ### 2.5 启用插件与设置主题
 ```bash
@@ -181,7 +202,10 @@ sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="ys"/' ~/.zshrc
 # 生效配置
 source ~/.zshrc
 ```
-> ⚠️ **踩坑提示**：Oh My Zsh 默认插件库**没有单独的 `java` 插件**，不要加入插件列表，否则会报 `plugin 'java' not found`。
+> ⚠️ **踩坑提示**：
+> 1. Oh My Zsh 默认插件库**没有单独的 `java` 插件**，不要加入插件列表，否则会报 `plugin 'java' not found`。
+> 2. 插件列表里的 **`docker` 插件在未安装 Docker 时无害但无意义**；若你暂不打算装 Docker，把 `docker` 从列表中去掉即可（后续装好 Docker 再加回来）。
+> 3. `source ~/.zshrc` 反复执行会重复追加 PATH 段，上面模板中的 `typeset -U path` 会自动去重，可放心执行。
 ---
 ## 第三章 各语言开发环境配置
 ### 3.1 C/C++ 工具链（GCC 14）
@@ -233,13 +257,16 @@ python3.13 -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/
 # 5. 验证安装
 python3.13 --version
 python3.13 -m pip --version
+# ensurepip 会在用户目录生成独立的 pip3.13（依赖 2.4 节把 ~/.local/bin 加入 PATH）
+pip3.13 --version
 ```
 > ⚠️ 踩坑提示
-> 1. deadsnakes 的 Python 3.13 没有独立的 `pip3.13` 系统级二进制文件，**不要尝试用 `update-alternatives` 配置 pip3**，会报 `alternative path doesn't exist` 错误，统一用 `python3.13 -m pip` 方式调用。
-> 2. 不推荐强制修改系统全局 `python3` 指向（`update-alternatives` 方式），会导致 Ubuntu 系统工具、`command-not-found` 等组件因依赖报错；用户级别名方案足够开发使用，且不影响系统稳定性。
+> 1. **关于 `pip3.13` 的准确说法**：deadsnakes 不提供**系统级** `/usr/bin/pip3.13`，`update-alternatives --query pip3` 会返回 `no alternatives for pip3`，强行 `--install` 会报 `alternative path doesn't exist`——所以**不要用 `update-alternatives` 配置 pip3**，统一用 `python3.13 -m pip`。
+>    但 `python3.13 -m ensurepip --upgrade` 之后，**用户级** `~/.local/bin/pip3.13` 是存在的（可用 `ls ~/.local/bin/pip*` 确认），前提是 2.4 节已把 `$HOME/.local/bin` 加进 PATH；否则会 `command not found`。
+> 2. 不推荐强制修改系统全局 `python3` 指向（`update-alternatives` 方式），会导致 Ubuntu 系统工具、`command-not-found` 等组件因依赖报错（详见 8.1 节）；用户级别名方案足够开发使用，且不影响系统稳定性。
 > 3. 若后续编译 Python C 扩展报错，可安装基础编译依赖：`sudo apt install -y build-essential libssl-dev libffi-dev`。
 > 4. 清华 PyPI 镜像地址 `https://pypi.tuna.tsinghua.edu.cn/simple` 为纯索引接口，浏览器访问解析异常属于正常现象，不影响 pip 正常使用。
-> 5. Python 别名已统一写入 `.zshrc`，重启终端后 `python`/`pip` 命令默认指向 3.13 版本。
+> 5. Python 别名已统一写入 `.zshrc`，重启交互终端后 `python`/`pip` 命令默认指向 3.13 版本；**脚本与非交互场景不生效**，请显式使用 `python3.13`。
 ---
 ### 3.4 Go 最新稳定版（1.27.1）
 从官方中文站下载固定版本安装，配置国内代理加速模块下载。
@@ -258,6 +285,7 @@ rm go1.27.1.linux-amd64.tar.gz
 go version
 ```
 > ⚠️ **踩坑提示**：
+> - `golang.google.cn` 直接 `curl -I` 看到的是 **302 跳转**（跳到 `dl.google.com`），浏览器/wget 会自动跟随，属正常现象，不是下载失败。
 > - Go 环境变量已统一写入 `.zshrc`，重启终端或 `source ~/.zshrc` 后全局生效。
 > - 若 `golang.google.cn` 下载失败，换阿里云镜像：`wget https://mirrors.aliyun.com/golang/go1.27.1.linux-amd64.tar.gz`
 > - 升级版本时只需替换 `go1.27.1` 为目标版本号即可，无需改动其他步骤。
@@ -303,6 +331,7 @@ pnpm -v
 > 1. 官方在线安装脚本在国内常因网络超时失败；Gitee Git 克隆方式是国内最稳定的安装方案。
 > 2. Zsh 中通配符 `lts/*` 会触发 `no matches found` 报错，用单引号包裹参数 `'lts/*'`；`.zshrc` 中已配置 `setopt nonomatch` 也可避免该问题。
 > 3. 若之前通过 Windows 端 npm 安装过 pnpm，WSL 中可能调用到 `/mnt/c/Users/.../npm/pnpm` 而报 `node: not found`，确保 NVM 加载后再执行 `npm install -g pnpm`。
+> 4. `pnpm -v` 随 npm 源更新会漂移（本文实测环境为 12.8.1），**版本号变化不代表安装失败**。
 ---
 ## 第四章 Git 基础配置
 ### 4.1 用户信息配置
@@ -381,6 +410,11 @@ systemctl status ssh.service
 > - 不要用 `sudo service ssh start` + 写入 `.bashrc` 的方式替代 systemd，会导致每次开终端都弹报错。
 > - 关键是 **`mask ssh.socket`**（而不仅是 disable），否则 socket 仍会被依赖触发。
 > - 端口是 **2222**，不是 22。
+> - 验证命令备查：
+> ```bash
+> systemctl is-enabled ssh.socket   # 期望：masked
+> ss -tlnp | grep 2222              # 期望：LISTEN 0.0.0.0:2222
+> ```
 
 ### 5.3 Windows 端连接方式
 ```bash
@@ -400,7 +434,7 @@ sudo apt install -y redis-server redis-tools
 # 启动并设置开机自启
 sudo systemctl enable --now redis-server
 
-# 验证
+# 验证（此时还没设密码，可直接 ping）
 redis-cli ping
 ```
 返回 `PONG` 即为成功。
@@ -429,6 +463,7 @@ redis-cli ping
 ```
 
 ### 6.3 基础配置（开发环境常用）
+> ⚠️ **本节一旦执行，Redis 就带密码了**：之后所有 `redis-cli` 裸连接都会返回 `NOAUTH Authentication required`，包括第七章的验证命令（第七章已按带密码写法给出）。跳过本节的话，第七章的无密码写法同样可用。
 ```bash
 # 备份原配置
 sudo cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
@@ -444,6 +479,9 @@ sudo sed -i 's/^bind 127.0.0.1 -::1/bind 0.0.0.0/' /etc/redis/redis.conf
 
 # 重启生效
 sudo systemctl restart redis-server
+
+# 确认密码已生效（必须带 -a，否则 NOAUTH）
+redis-cli -a your_password ping
 ```
 
 ### 6.4 常用操作
@@ -454,14 +492,13 @@ sudo systemctl stop redis-server
 sudo systemctl restart redis-server
 sudo systemctl status redis-server
 
-# 连接 Redis（无密码）
-redis-cli
-
-# 连接 Redis（有密码）
-redis-cli -a your_password
-
-# 连接后验证密码
-AUTH your_password
+# 连接 Redis（设置了 6.3 密码后必须带认证，否则报 NOAUTH）
+redis-cli -a your_password        # 方式 1：-a 参数
+# 方式 2：环境变量（无 warning，适合脚本）
+# REDISCLI_AUTH=your_password redis-cli
+# 方式 3：先裸连接，再手动认证
+# redis-cli
+# AUTH your_password
 
 # 测试读写
 SET mykey "hello"
@@ -473,6 +510,7 @@ KEYS *
 # 查看服务信息
 INFO server
 ```
+> 💡 若**未执行 6.3**（无密码），直接 `redis-cli` 连接即可，`SET/GET` 等命令同样可用。
 
 ### 6.5 修改密码不生效的踩坑与修复
 **现象**：执行 `sed` 改密码后，用新密码连接报 `AUTH failed: WRONGPASS invalid username-password pair or user is disabled.`，旧密码仍能用。
@@ -498,13 +536,14 @@ redis-cli -a 新密码 ping
 
 > ⚠️ **踩坑提示**：
 > 1. **WSL 必须先启用 systemd**（见文档 1.1 节），否则 `systemctl` 命令无法使用，Redis 服务无法正常管理。
-> 2. **设置密码后**，`redis-cli` 直接连接执行命令会报 `NOAUTH Authentication required`，需用 `-a` 参数或连接后执行 `AUTH`。
+> 2. **设置密码后**，`redis-cli` 直接连接执行命令会报 `NOAUTH Authentication required`，需用 `-a` 参数、`REDISCLI_AUTH` 环境变量或连接后执行 `AUTH`——**第七章的验证命令也遵守这条**。
 > 3. **开启远程访问后**，Windows 端可通过 `localhost:6379` 连接 WSL 里的 Redis，但务必设置密码，避免暴露无密码实例。
 > 4. **官方仓库安装的包名是 `redis`**（不是 `redis-server`），会同时安装服务端和客户端；系统源安装则需要分别装 `redis-server` 和 `redis-tools`。
 > 5. 配置文件修改后必须执行 `sudo systemctl restart redis-server` 才会生效；以后改密码记住两点：① sed 模式要能匹配到当前实际的行（带不带 `#`）；② 改完必须重启。
 ---
 ## 第七章 全环境验证
-执行以下命令，一键验证所有工具是否正常：
+> ⚠️ 请在**登录后的 zsh 交互终端**中执行本脚本：`python`/`pip` 是 zsh 别名，写进脚本或在 bash 里跑会 `command not found`。
+> 若执行过 6.3 设置了 Redis 密码，把下面的 `your_password` 换成真实密码（或先 `export REDISCLI_AUTH=你的密码`）。
 ```bash
 echo "=== 开发环境全景 ==="
 echo -e "\nC/C++:"
@@ -528,12 +567,12 @@ echo -e "\nSSH 服务:"
 systemctl status ssh.service | grep Active
 echo -e "\nRedis:"
 redis-server --version
-redis-cli ping
+REDISCLI_AUTH=your_password redis-cli ping
 echo -e "\nZsh:"
 zsh --version
 ```
 
-**预期输出参考**：
+**预期输出参考**（版本号会随源更新轻微漂移，`git`/`zsh`/`gcc` 等系统包以实际为准）：
 ```
 C/C++:
 gcc (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0
@@ -549,26 +588,39 @@ go version go1.27.1 linux/amd64
 Node.js:
 v24.21.0
 11.19.0
-12.6.0
+12.8.1
 Git:
 git version 2.43.0
 SSH 服务:
-     Active: active (running)
+     Active: active (running) since ... CST; ... ago
 Redis:
-Redis server v=8.10.2 sha=00000000:1 malloc=jemalloc-5.3.0 bits=64
+Redis server v=8.10.2 sha=00000000:1 malloc=jemalloc-5.3.0 bits=64 build=677c1e5d953828c4
 PONG
 Zsh:
 zsh 5.9 (x86_64-ubuntu-linux-gnu)
 ```
+
+> 💡 两个容易误判的点：
+> - **Redis 一行若显示 `NOAUTH Authentication required.`**：说明 6.3 的密码生效了而本脚本没带认证——按上面的写法带上 `REDISCLI_AUTH` 即可，不是安装失败。
+> - **`pnpm -v` 与 12.8.1 不同**：pnpm 从 npm 源安装，版本持续更新，属正常漂移。
 ---
 ## 第八章 常见问题排错
 ### 8.1 命令不存在时弹出 Python 报错
+> ⚠️ **先确认你是否真的会遇到**：本教程（3.3 节）**不修改系统 `python3`**，只在 `.zshrc` 加用户级别名。只要 `python3 --version` 仍是 `3.12.x`、`/usr/lib/command-not-found` 首行仍是 `#!/usr/bin/python3`，**就不会触发本问题，也无需执行本节修复**。只有你曾用 `update-alternatives` 把系统 `python3` 切到 3.13 时才需要修。
+
 **现象**：输入错误命令时，抛出 `ModuleNotFoundError: No module named 'apt_pkg'`
-**原因**：系统 `command-not-found` 工具依赖 Python 3.12 的 `apt_pkg` 模块，将默认 `python3` 切换到 3.13 后不兼容。
-**解决**：
+**原因**：系统 `command-not-found` 工具依赖 Python 3.12 的 `apt_pkg` 模块（`apt_pkg` 只装在 3.12 的 `dist-packages` 下），将默认 `python3` 切换到 3.13 后不兼容。
+**自查**：
+```bash
+python3 --version                 # 若已是 3.13.x → 说明系统 python3 被切过
+head -1 /usr/lib/command-not-found   # 期望 #!/usr/bin/python3
+python3.12 -c "import apt_pkg" && echo ok
+```
+**解决**（把 shebang 固定到 3.12，绕开被改过的 `python3`）：
 ```bash
 sudo sed -i '1s|.*|#!/usr/bin/python3.12|' /usr/lib/command-not-found
 ```
+> 💡 更彻底的做法是把系统 `python3` 切回 3.12（`update-alternatives` 若无可选项则说明从未切换过，无需处理）。
 ---
 ### 8.2 Zsh 中 `#` 开头的注释被当作命令报错
 **现象**：在 Zsh 交互终端输入或粘贴 `# 注释` 行时，报 `zsh: command not found: #`
@@ -591,6 +643,10 @@ setopt interactive_comments
 **原因**：PATH 中未包含 `/usr/local/go/bin`，或 PATH 写法错误。
 **解决**：确认 `.zshrc` 中是 `export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin`，然后 `source ~/.zshrc`。
 ---
+### 8.6 pip 安装的命令 command not found
+**原因**：`python3.13 -m pip install xxx` 的可执行文件装到 `~/.local/bin`，Ubuntu 24.04 默认 PATH 不含该目录。
+**解决**：确认 `.zshrc` 中有 `export PATH=$HOME/.local/bin:$PATH`（见 2.4 节），然后 `source ~/.zshrc`；验证 `pip3.13 --version` 可直接执行。
+---
 ## 第九章 WSL2 性能优化建议
 ### 9.1 限制内存与 CPU
 在 Windows 用户目录（`C:\Users\你的用户名\`）创建 `.wslconfig` 文件：
@@ -606,33 +662,50 @@ Windows 终端执行 `wsl --shutdown` 后重启 WSL 生效。
 项目代码放在 WSL 原生目录（`~/` 下），不要放在 `/mnt/c/`，IO 性能差距可达 10 倍以上。
 
 ### 9.3 磁盘空间回收
-定期执行：
+分两层，**Linux 侧清理并不能缩小 WSL 虚拟磁盘（ext4.vhdx）占用的 Windows 磁盘**：
 ```bash
+# 1) Linux 侧：清理 apt 缓存与无用依赖（只释放 WSL 内部可用空间）
 sudo apt autoremove -y && sudo apt clean
 ```
+```powershell
+# 2) Windows 侧：回收 vhdx 实际占用（在 PowerShell 中执行，需先 wsl --shutdown）
+wsl --shutdown
+
+# 方式 A：启用稀疏磁盘（Windows 11 / 新版 WSL 支持，自动回收）
+wsl --manage Ubuntu-24.04 --set-sparse true
+
+# 方式 B：手动 compact（任意 WSL 版本可用，路径按发行版名调整）
+# wsl --shutdown 后，管理员 PowerShell：
+#   wsl --export Ubuntu-24.04 D:\wsl-backup\ubuntu.tar   # 或直接 diskpart compact vhd
+# diskpart:
+#   select vdisk file="C:\Users\你的用户名\AppData\Local\Packages\CanonicalGroupLimited.Ubuntu24.04LTS_79rhkp1fndgsc\LocalState\ext4.vhdx"
+#   compact vdisk
+```
+> 💡 `wsl --manage <发行版名> --set-sparse true` 是最省事的做法；老版本 WSL 用 diskpart 的 `compact vdisk`。执行前先在 WSL 内 `sudo apt clean && sudo apt autoremove`，回收效果更好。
 ---
 ## 附录：完整执行顺序速查
 ```
 1.1 启用 systemd → wsl --shutdown → 重启验证
-1.2 替换清华源 → apt update && full-upgrade
+1.2 换清华源（改 ubuntu.sources，勿只写 sources.list）→ apt update && full-upgrade
 1.3 安装基础工具合集
 2.1 安装 Zsh
-2.2 安装 Oh My Zsh
+2.2 安装 Oh My Zsh（[Y/n] 直接回车即可；克隆仍走 GitHub，超时用 REMOTE=gitee）
 2.3 安装插件
-2.4 写入完整 .zshrc
-2.5 启用插件 + 设置主题 + source
+2.4 写入完整 .zshrc（含 ~/.local/bin 入 PATH）
+2.5 启用插件 + 设置主题 + source（未装 Docker 可去掉 docker 插件）
 3.1 GCC 14
 3.2 Java 21
-3.3 Python 3.13（含 pip 清华源）
+3.3 Python 3.13（含 pip 清华源；勿用 update-alternatives 配 pip）
 3.4 Go（含国内代理）
 3.5 NVM + Node.js + pnpm
 4.1 Git 用户信息
 4.2 SSH 密钥
 4.3 HTTPS 推送切换 SSH
 5.2 OpenSSH 完整修复
-6.2 Redis 官方仓库安装 + 6.3 基础配置
-8.1 修复 command-not-found
-第七章 全环境验证
+6.2 Redis 官方仓库安装 + 6.3 基础配置（设置密码后验证需带 -a / REDISCLI_AUTH）
+8.1 修复 command-not-found（仅当你曾把系统 python3 切到 3.13 才需要）
+第七章 全环境验证（在登录后的 zsh 交互终端执行，Redis 带密码 ping）
+9.3 磁盘回收（可选：apt clean + wsl --set-sparse / compact vhdx）
 ```
 ---
 至此，WSL2 Ubuntu 24.04 全栈开发环境配置完成，涵盖后端、前端、系统开发所需的全部基础工具链，所有国内网络优化与踩坑点均已处理。
