@@ -202,18 +202,34 @@ const articleSchema = {
 				padding: 3em;
 				min-height: 300px;
 				width: 100%;
-				animation: slideUp 0.5s ease-out forwards;
-				opacity: 0; /* 初始隐藏 */
-				transform: translateY(30px); /* 初始下移 */
+				opacity: 1;
 				min-width: 0; /* 修复：防止 Grid Item 被内部宽元素（如代码块）撑大 */
-				will-change: transform, opacity;
 			}
 
-			@keyframes slideUp {
-				to {
-					opacity: 1;
-					transform: translateY(0);
-				}
+			/* 屏幕显示时正文使用主题变量颜色，避免被打印样式的硬编码颜色覆盖 */
+			:global(.prose) {
+				color: var(--color-text) !important;
+			}
+			:global(.prose p),
+			:global(.prose li) {
+				color: var(--color-text) !important;
+			}
+			:global(.prose h1),
+			:global(.prose h2),
+			:global(.prose h3),
+			:global(.prose h4),
+			:global(.prose h5),
+			:global(.prose h6) {
+				color: var(--color-text-strong) !important;
+			}
+			:global(.prose blockquote) {
+				color: var(--color-text-secondary) !important;
+			}
+			:global(.prose blockquote p) {
+				color: var(--color-text-secondary) !important;
+			}
+			:global(.prose a) {
+				color: var(--color-link, #3b82f6) !important;
 			}
 
 			/* 响应式调整 */
