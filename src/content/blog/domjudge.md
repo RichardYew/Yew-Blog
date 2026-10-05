@@ -1,8 +1,15 @@
 ---
-title: DomJudge比赛环境部署(未实践)
-description: 部署DomJudge比赛的环境
-pubDate: 2026-10-02
+title: "DomJudge比赛环境部署(未实践)"
+date: "2026-10-02T00:00:00+08:00"
+description: "部署DomJudge比赛的环境"
+categories:
+  - "竞赛"
+tags:
+  - "domjudge"
+  - "ubuntu"
+  - "oj"
 ---
+
 # Ubuntu Server 24.04 LTS
 这里简要说一下
 - 安装时换源，填写清华源像，例如：

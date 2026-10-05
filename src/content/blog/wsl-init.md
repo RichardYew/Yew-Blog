@@ -3,9 +3,11 @@ title: "WSL 开发环境构建"
 date: "2026-10-02T00:00:00+08:00"
 description: "初始化 WSL 开发环境"
 categories:
-  - "未分类"
+  - "开发环境"
 tags:
-  - "待整理"
+  - "wsl"
+  - "ubuntu"
+  - "开发环境"
 ---
 
 # WSL2 Ubuntu 24.04 全栈开发环境从零配置教程
